@@ -3,7 +3,7 @@
 ## 🛠️ Development Environment Setup
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 20+
 - npm or pnpm
 - AWS CLI configured
 - VS Code (recommended)
@@ -93,7 +93,7 @@ npm run format:check   # Check formatting
 # Unit tests
 npm run test:unit
 
-# Integration tests  
+# Integration tests
 npm run test:integration
 
 # E2E tests (requires deployed infrastructure)

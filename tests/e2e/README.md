@@ -126,7 +126,7 @@ node tests/e2e/utils/database-cleanup.cjs
   - Lambda functions
 
 ### Environment Setup
-- Node.js 18+ installed
+- Node.js 20+ installed
 - Required npm packages installed (`npm install`)
 - Network connectivity to AWS services
 
