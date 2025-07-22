@@ -1,0 +1,53 @@
+
+
+
+name: production
+description: Production environment for live system deployment
+
+
+protection_rules:
+  required_reviewers: 2
+  wait_timer: 300
+  prevent_self_review: true
+
+
+variables:
+  AWS_REGION: us-east-1
+  STAGE: prod
+  LOG_LEVEL: WARN
+  FAILURE_RATE: "0.3"
+  POWERTOOLS_LOG_LEVEL: WARN
+  POWERTOOLS_LOGGER_SAMPLE_RATE: "0.1"
+
+
+required_secrets:
+  - AWS_ACCESS_KEY_ID_PROD
+  - AWS_SECRET_ACCESS_KEY_PROD
+  - AWS_REGION_PROD
+
+
+optional_secrets:
+  - SNYK_TOKEN
+  - CODECOV_TOKEN
+  - SLACK_WEBHOOK_URL
+  - PAGERDUTY_INTEGRATION_KEY
+
+
+deployment:
+  auto_deploy_on: 
+    - push_to_main
+    - manual_trigger_with_approval
+  
+  pre_deployment_checks:
+    - lint
+    - unit_tests
+    - integration_tests
+    - security_scan
+    - performance_tests
+    - staging_validation
+    
+  post_deployment_actions:
+    - health_checks
+    - monitoring_validation
+    - rollback_preparation
+    - notification_alerts

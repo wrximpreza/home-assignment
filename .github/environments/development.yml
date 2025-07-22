@@ -1,0 +1,38 @@
+name: development
+description: Development environment for testing and validation
+
+protection_rules:
+  required_reviewers: 0
+  wait_timer: 0
+  prevent_self_review: false
+
+variables:
+  AWS_REGION: us-east-1
+  STAGE: dev
+  LOG_LEVEL: DEBUG
+  FAILURE_RATE: "0.3"
+  POWERTOOLS_LOG_LEVEL: DEBUG
+  POWERTOOLS_LOGGER_SAMPLE_RATE: "1.0"
+
+required_secrets:
+  - AWS_ACCESS_KEY_ID_DEV
+  - AWS_SECRET_ACCESS_KEY_DEV
+  - AWS_REGION_DEV
+
+optional_secrets:
+  - SNYK_TOKEN
+  - CODECOV_TOKEN
+
+deployment:
+  auto_deploy_on:
+    - push_to_develop
+    - manual_trigger
+
+  pre_deployment_checks:
+    - lint
+    - unit_tests
+    - integration_tests
+
+  post_deployment_actions:
+    - smoke_tests
+    - health_checks

@@ -1,0 +1,238 @@
+name: Deploy Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: false
+        type: boolean
+      run_tests:
+        description: 'Run tests before deployment'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  NODE_VERSION: '20.x'
+  PNPM_VERSION: '8.x'
+
+jobs:
+  determine-environment:
+    name: Determine Deployment Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      should_deploy: ${{ steps.env.outputs.should_deploy }}
+      run_tests: ${{ steps.env.outputs.run_tests }}
+
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "run_tests=${{ github.event.inputs.run_tests }}" >> $GITHUB_OUTPUT
+
+  run-tests:
+    name: Run Tests Before Deployment
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    if: needs.determine-environment.outputs.should_deploy == 'true' && needs.determine-environment.outputs.run_tests == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+          
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+            
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Run linting
+        run: pnpm run lint
+        
+      - name: Run unit tests
+        run: pnpm run test:unit
+        
+      - name: Run integration tests
+        run: pnpm run test:integration
+
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [determine-environment, run-tests]
+    if: |
+      needs.determine-environment.outputs.should_deploy == 'true' &&
+      needs.determine-environment.outputs.environment == 'dev' &&
+      (always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped' || github.event.inputs.force_deploy == 'true'))
+    environment:
+      name: development
+      url: ${{ steps.deploy.outputs.api_endpoint }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ secrets.AWS_REGION_DEV || 'us-east-1' }}
+          
+      - name: Deploy to AWS
+        id: deploy
+        run: |
+          pnpm run deploy:dev
+          API_ENDPOINT=$(npx serverless info --stage dev --verbose | grep -o 'https://[^[:space:]]*')
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          
+      - name: Run smoke tests
+        run: pnpm run test:smoke -- --endpoint=${{ steps.deploy.outputs.api_endpoint }}
+        continue-on-error: true
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [determine-environment, run-tests]
+    if: |
+      needs.determine-environment.outputs.should_deploy == 'true' &&
+      needs.determine-environment.outputs.environment == 'staging' &&
+      (always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped' || github.event.inputs.force_deploy == 'true'))
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.api_endpoint }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+          aws-region: ${{ secrets.AWS_REGION_STAGING || 'us-east-1' }}
+          
+      - name: Deploy to AWS
+        id: deploy
+        run: |
+          npx serverless deploy --stage staging
+          API_ENDPOINT=$(npx serverless info --stage staging --verbose | grep -o 'https://[^[:space:]]*')
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          
+      - name: Run E2E tests
+        run: pnpm run test:e2e -- --endpoint=${{ steps.deploy.outputs.api_endpoint }}
+        continue-on-error: true
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [determine-environment, run-tests]
+    if: |
+      needs.determine-environment.outputs.should_deploy == 'true' &&
+      needs.determine-environment.outputs.environment == 'prod' &&
+      (always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped' || github.event.inputs.force_deploy == 'true'))
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.api_endpoint }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ secrets.AWS_REGION_PROD || 'us-east-1' }}
+          
+      - name: Deploy to AWS
+        id: deploy
+        run: |
+          pnpm run deploy:prod
+          API_ENDPOINT=$(npx serverless info --stage prod --verbose | grep -o 'https://[^[:space:]]*')
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          
+      - name: Run production health checks
+        run: pnpm run test:health -- --endpoint=${{ steps.deploy.outputs.api_endpoint }}
+        
+      - name: Create deployment tag
+        if: success()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "v$(date +'%Y%m%d%H%M%S')" -m "Production deployment $(date)"
+          git push origin --tags
