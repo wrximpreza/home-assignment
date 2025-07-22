@@ -163,7 +163,9 @@ export class PowertoolsLogger {
   }
 
   apiResponseSent(statusCode: number, context?: LogContext): void {
-    this.info('API response sent', {
+    // Log response with appropriate level based on status code
+    const logLevel = statusCode >= 400 ? 'warn' : 'info';
+    this[logLevel]('API response sent', {
       ...context,
       statusCode,
       event: 'api_response',

@@ -1,7 +1,7 @@
-import { RetryConfig, RetryAttempt, RetryMetrics, RetryStrategyType } from '@/types';
 import { retryConfig as defaultRetryConfig } from '@/config';
-import { logger } from '@/utils/logger';
+import { RetryAttempt, RetryConfig, RetryMetrics, RetryStrategyType } from '@/types';
 import { BackoffStrategyFactory } from '@/utils/backoffStrategies';
+import { logger } from '@/utils/logger';
 
 /**
  * Enhanced retry strategy utility with multiple backoff algorithms
@@ -103,6 +103,8 @@ export class RetryStrategy {
   getMetrics(): RetryMetrics {
     const totalAttempts = this.attempts.length;
     const totalDelayMs = this.attempts.reduce((sum, attempt) => sum + attempt.delayMs, 0);
+
+    // Calculate average delay, handle edge case
     const averageDelayMs = totalAttempts > 0 ? totalDelayMs / totalAttempts : 0;
 
     return {

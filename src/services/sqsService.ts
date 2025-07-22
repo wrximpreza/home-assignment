@@ -1,15 +1,15 @@
 import {
+  GetQueueAttributesCommand,
   SQSClient,
   SendMessageCommand,
   SendMessageCommandInput,
-  GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs';
 
-import { awsConfig, env, calculateBackoffDelay } from '@/config';
-import { TaskMessage, TaskPayload, RetryStrategyType } from '@/types';
+import { awsConfig, calculateBackoffDelay, env } from '@/config';
+import { SQSVisibilityService } from '@/services/sqsVisibilityService';
+import { RetryStrategyType, TaskMessage, TaskPayload } from '@/types';
 import { logger } from '@/utils/logger';
 import { createRetryStrategy } from '@/utils/retryStrategy';
-import { SQSVisibilityService } from '@/services/sqsVisibilityService';
 
 export class SQSService {
   private readonly client: SQSClient;
@@ -176,12 +176,14 @@ export class SQSService {
 
   async getMainQueueDepth(): Promise<number> {
     const attributes = await this.getQueueAttributes(env.TASK_QUEUE_URL);
-    return parseInt(attributes.ApproximateNumberOfMessages || '0', 10);
+    const messageCount = attributes.ApproximateNumberOfMessages || '0';
+    return parseInt(messageCount, 10);
   }
 
   async getDLQDepth(): Promise<number> {
     const attributes = await this.getQueueAttributes(env.TASK_DLQ_URL);
-    return parseInt(attributes.ApproximateNumberOfMessages || '0', 10);
+    const messageCount = attributes.ApproximateNumberOfMessages || '0';
+    return parseInt(messageCount, 10);
   }
 
   async healthCheck(): Promise<boolean> {

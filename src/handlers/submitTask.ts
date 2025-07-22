@@ -1,28 +1,14 @@
-import middy from '@middy/core';
-import httpJsonBodyParser from '@middy/http-json-body-parser';
-import httpErrorHandler from '@middy/http-error-handler';
-import httpCors from '@middy/http-cors';
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
-import { logMetrics } from '@aws-lambda-powertools/metrics/middleware';
-import { injectLambdaContext } from '@aws-lambda-powertools/logger/middleware';
 import { idempotencyMiddleware } from '@/middleware/idempotency';
+import { injectLambdaContext } from '@aws-lambda-powertools/logger/middleware';
+import { logMetrics } from '@aws-lambda-powertools/metrics/middleware';
+import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
+import middy from '@middy/core';
+import httpCors from '@middy/http-cors';
+import httpErrorHandler from '@middy/http-error-handler';
+import httpJsonBodyParser from '@middy/http-json-body-parser';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 
-import { SubmitTaskHandler, TaskStatus } from '@/types';
-import { validateEnvironment, processingConfig } from '@/config';
-import {
-  logger,
-  metrics,
-  tracer,
-  powertoolsLoggerInstance,
-  createApiContext,
-} from '@/utils/logger';
-import {
-  handleError,
-  getCorrelationId,
-  createdResponse,
-  badRequestResponse,
-} from '@/utils/response';
+import { processingConfig, validateEnvironment } from '@/config';
 import {
   SubmitTaskRequestDto,
   TaskSubmissionResponseDto,
@@ -34,8 +20,22 @@ import {
   responseValidation,
   validationErrorHandler,
 } from '@/middleware/validation';
-import { sqsService } from '@/services/sqsService';
 import { dynamoService } from '@/services/dynamoService';
+import { sqsService } from '@/services/sqsService';
+import { SubmitTaskHandler, TaskStatus } from '@/types';
+import {
+  createApiContext,
+  logger,
+  metrics,
+  powertoolsLoggerInstance,
+  tracer,
+} from '@/utils/logger';
+import {
+  badRequestResponse,
+  createdResponse,
+  getCorrelationId,
+  handleError,
+} from '@/utils/response';
 
 const customIdempotencyMiddleware = idempotencyMiddleware({
   tableName: process.env.IDEMPOTENCY_TABLE_NAME || 'task-processing-idempotency',
@@ -56,18 +56,22 @@ const customIdempotencyMiddleware = idempotencyMiddleware({
 const baseSubmitTaskHandler: SubmitTaskHandler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
-  const startTime = Date.now();
+  const requestStart = Date.now();
 
+  // Get correlation ID for request tracking
   const correlationId = getCorrelationId(event.headers);
-  const context = createApiContext(correlationId, event.headers['user-agent']);
+  const userAgent = event.headers['user-agent'];
+  const clientIp = event.requestContext.identity.sourceIp;
+  const context = createApiContext(correlationId, userAgent);
 
+  // Setup logging context
   logger.addContext({ correlationId });
   metrics.addMetadata('correlationId', correlationId);
-  metrics.addMetadata('userAgent', event.headers['user-agent'] || 'unknown');
-  metrics.addMetadata('sourceIp', event.requestContext.identity.sourceIp);
+  metrics.addMetadata('userAgent', userAgent || 'unknown');
+  metrics.addMetadata('sourceIp', clientIp);
   logger.apiRequestReceived(event.httpMethod, event.path, {
     ...context,
-    sourceIp: event.requestContext.identity.sourceIp,
+    sourceIp: clientIp,
   });
 
   try {
@@ -155,7 +159,7 @@ const baseSubmitTaskHandler: SubmitTaskHandler = async (
         taskId,
         messageId,
       });
-      const processingTime = Date.now() - startTime;
+      const processingTime = Date.now() - requestStart;
       metrics.addMetric('TaskSubmitted', 'Count', 1);
       metrics.addMetric('SubmissionLatency', 'Milliseconds', processingTime);
       metrics.addMetric('PayloadSize', 'Bytes', JSON.stringify(payload).length);
@@ -207,7 +211,7 @@ const baseSubmitTaskHandler: SubmitTaskHandler = async (
     }
   } catch (error) {
     logger.error('Unhandled error in task submission', context, error as Error);
-    const processingTime = Date.now() - startTime;
+    const processingTime = Date.now() - requestStart;
     metrics.addMetric('SubmissionError', 'Count', 1);
     metrics.addMetric('ErrorLatency', 'Milliseconds', processingTime);
     return handleError(error);

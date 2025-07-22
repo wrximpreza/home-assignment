@@ -1,14 +1,14 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
-  PutCommand,
   GetCommand,
-  UpdateCommand,
+  PutCommand,
   QueryCommand,
   ScanCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
-import { awsConfig, env, constants } from '@/config';
+import { awsConfig, constants, env } from '@/config';
 import { TaskRecord, TaskStatus } from '@/types';
 import { logger } from '@/utils/logger';
 
@@ -212,13 +212,15 @@ export class DynamoService {
       });
 
       const result = await this.client.send(command);
+
+      // Count tasks by status
       if (result.Items) {
-        for (const item of result.Items) {
+        result.Items.forEach(item => {
           const status = item.status as TaskStatus;
           if (status in stats) {
             stats[status]++;
           }
-        }
+        });
       }
 
       return stats;

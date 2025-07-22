@@ -1,31 +1,31 @@
-import middy from '@middy/core';
-import { SQSEvent, SQSRecord, SQSBatchResponse, SQSBatchItemFailure } from 'aws-lambda';
-import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
-import { logMetrics } from '@aws-lambda-powertools/metrics/middleware';
 import { injectLambdaContext } from '@aws-lambda-powertools/logger/middleware';
+import { logMetrics } from '@aws-lambda-powertools/metrics/middleware';
+import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
+import middy from '@middy/core';
+import { SQSBatchItemFailure, SQSBatchResponse, SQSEvent, SQSRecord } from 'aws-lambda';
 
 import {
-  ProcessTaskHandler,
-  TaskMessage,
-  TaskStatus,
-  RetryableError,
-  NonRetryableError,
-} from '@/types';
-import {
-  validateEnvironment,
+  calculateBackoffDelay,
+  isRetryable,
   processingConfig,
   retryConfig,
-  isRetryable,
-  calculateBackoffDelay,
+  validateEnvironment,
 } from '@/config';
+import { dynamoService } from '@/services/dynamoService';
 import {
+  NonRetryableError,
+  ProcessTaskHandler,
+  RetryableError,
+  TaskMessage,
+  TaskStatus,
+} from '@/types';
+import {
+  createTaskContext,
   logger,
   metrics,
-  tracer,
-  createTaskContext,
   powertoolsLoggerInstance,
+  tracer,
 } from '@/utils/logger';
-import { dynamoService } from '@/services/dynamoService';
 
 async function simulateTaskProcessing(
   taskId: string,
@@ -71,6 +71,7 @@ async function simulateTaskProcessing(
       let selectedError: { type: string; retryable: boolean };
       let errorIndex = -1;
 
+      // Special handling for force-fail tasks
       if (taskId.includes('force-fail-retry')) {
         selectedError = { type: 'ServiceUnavailableError', retryable: true };
         errorIndex = 1;
@@ -79,6 +80,7 @@ async function simulateTaskProcessing(
           errorType: selectedError.type,
         });
       } else {
+        // Use simple hash to determine error type consistently
         let hash = 5381;
         for (let i = 0; i < taskId.length; i++) {
           hash = (hash << 5) + hash + taskId.charCodeAt(i);

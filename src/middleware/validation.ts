@@ -72,6 +72,7 @@ export function requestValidation<T>(
         });
 
         if (error instanceof z.ZodError) {
+          // Get the first validation error for user-friendly message
           const firstError = error.errors[0];
           const errorMessage = firstError?.message || 'Validation failed';
           const field = firstError?.path.join('.') || 'unknown';
@@ -83,6 +84,7 @@ export function requestValidation<T>(
           throw validationError;
         }
 
+        // Ensure error has status code
         if (!(error as ValidationError).statusCode) {
           (error as ValidationError).statusCode = 400;
         }

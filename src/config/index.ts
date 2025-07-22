@@ -92,10 +92,11 @@ export function calculateBackoffDelay(
   retryCount: number,
   config: RetryConfig = retryConfig
 ): number {
+  // Calculate exponential backoff
   const baseDelay = config.baseDelayMs * Math.pow(config.backoffMultiplier, retryCount);
-
   const cappedDelay = Math.min(baseDelay, config.maxDelayMs);
 
+  // Add jitter if enabled to prevent thundering herd
   if (config.jitterEnabled) {
     const jitterMaxMs = config.jitterMaxMs ?? 500;
     const jitter = Math.random() * jitterMaxMs;
