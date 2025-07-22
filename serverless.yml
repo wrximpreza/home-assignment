@@ -1,0 +1,358 @@
+service: fault-tolerant-service
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  memorySize: 512
+  timeout: 30
+  logRetentionInDays: 14
+  
+  environment:
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    TASK_QUEUE_URL:
+      Ref: TaskQueue
+    TASK_DLQ_URL:
+      Ref: TaskDeadLetterQueue
+    TASK_TABLE_NAME:
+      Ref: TaskTable
+    IDEMPOTENCY_TABLE_NAME:
+      Ref: IdempotencyTable
+    POWERTOOLS_SERVICE_NAME: fault-tolerant-service
+    POWERTOOLS_METRICS_NAMESPACE: FaultTolerantService
+    POWERTOOLS_LOG_LEVEL: ${self:custom.logLevel.${self:provider.stage}, 'INFO'}
+    POWERTOOLS_LOGGER_SAMPLE_RATE: ${self:custom.logSampleRate.${self:provider.stage}, '0.1'}
+    POWERTOOLS_TRACER_CAPTURE_RESPONSE: true
+    POWERTOOLS_TRACER_CAPTURE_ERROR: true
+    POWERTOOLS_METRICS_CAPTURE_COLD_START: true
+    
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - Fn::GetAtt:
+                - TaskQueue
+                - Arn
+            - Fn::GetAtt:
+                - TaskDeadLetterQueue
+                - Arn
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - Fn::GetAtt:
+                - TaskTable
+                - Arn
+            - Fn::Sub: "${TaskTable.Arn}/index/*"
+            - Fn::GetAtt:
+                - IdempotencyTable
+                - Arn
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - cloudwatch:PutMetricData
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - xray:PutTraceSegments
+            - xray:PutTelemetryRecords
+          Resource: "*"
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+  - serverless-offline-sqs
+
+custom:
+  logLevel:
+    dev: DEBUG
+    staging: INFO
+    prod: WARN
+
+  logSampleRate:
+    dev: 1.0
+    staging: 0.5
+    prod: 0.1
+
+  failureRate:
+    dev: 0.3
+    staging: 0.3
+    prod: 0.3
+
+  esbuild:
+    bundle: true
+    minify: true
+    sourcemap: true
+    exclude:
+      - aws-sdk
+    target: node20
+    define:
+      require.resolve: undefined
+    platform: node
+    concurrency: 10
+
+  serverless-offline:
+    httpPort: 3000
+    lambdaPort: 3002
+
+  serverless-offline-sqs:
+    autoCreate: true
+    apiVersion: '2012-11-05'
+    endpoint: http://0.0.0.0:9324
+    region: ${self:provider.region}
+    accessKeyId: root
+    secretAccessKey: root
+
+functions:
+  submitTask:
+    handler: src/handlers/submitTask.handler
+    events:
+      - http:
+          path: /submit-task
+          method: post
+          cors: true
+    environment:
+      TASK_QUEUE_URL:
+        Ref: TaskQueue
+      TASK_TABLE_NAME:
+        Ref: TaskTable
+      IDEMPOTENCY_TABLE_NAME:
+        Ref: IdempotencyTable
+      FAILURE_RATE: ${self:custom.failureRate.${self:provider.stage}}
+      POWERTOOLS_LOGGER_LOG_EVENT: true
+      POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS: true
+    tracing: Active
+
+  processTask:
+    handler: src/handlers/processTask.handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - TaskQueue
+              - Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+    environment:
+      TASK_TABLE_NAME:
+        Ref: TaskTable
+      FAILURE_RATE: ${self:custom.failureRate.${self:provider.stage}}
+      POWERTOOLS_LOGGER_LOG_EVENT: true
+    tracing: Active
+
+  monitorDLQ:
+    handler: src/handlers/monitorDLQ.handler
+    description: Monitor dead letter queue and log failed tasks
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - TaskDeadLetterQueue
+              - Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+    environment:
+      TASK_TABLE_NAME:
+        Ref: TaskTable
+    tracing: Active
+
+resources:
+  Resources:
+    TaskQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-task-queue-${self:provider.stage}
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 1209600
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - TaskDeadLetterQueue
+              - Arn
+          maxReceiveCount: 3
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    TaskDeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-task-dlq-${self:provider.stage}
+        MessageRetentionPeriod: 1209600
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    TaskTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-tasks-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: taskId
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: taskId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: StatusIndex
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    IdempotencyTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-idempotency-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expiration
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    SubmitTaskLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-submitTask
+        RetentionInDays: ${self:provider.logRetentionInDays}
+
+    ProcessTaskLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-processTask
+        RetentionInDays: ${self:provider.logRetentionInDays}
+
+    MonitorDLQLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-monitorDLQ
+        RetentionInDays: ${self:provider.logRetentionInDays}
+
+    TaskQueueDepthAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-task-queue-depth
+        AlarmDescription: Alert when task queue depth is high
+        MetricName: ApproximateNumberOfVisibleMessages
+        Namespace: AWS/SQS
+        Statistic: Average
+        Period: 300
+        EvaluationPeriods: 2
+        Threshold: 100
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: QueueName
+            Value:
+              Fn::GetAtt:
+                - TaskQueue
+                - QueueName
+
+    DLQDepthAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-dlq-depth
+        AlarmDescription: Alert when DLQ has messages
+        MetricName: ApproximateNumberOfVisibleMessages
+        Namespace: AWS/SQS
+        Statistic: Average
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 0
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: QueueName
+            Value:
+              Fn::GetAtt:
+                - TaskDeadLetterQueue
+                - QueueName
+
+  Outputs:
+    TaskQueueUrl:
+      Description: URL of the Task Queue
+      Value:
+        Ref: TaskQueue
+      Export:
+        Name: ${self:service}-${self:provider.stage}-TaskQueueUrl
+
+    TaskDLQUrl:
+      Description: URL of the Task Dead Letter Queue
+      Value:
+        Ref: TaskDeadLetterQueue
+      Export:
+        Name: ${self:service}-${self:provider.stage}-TaskDLQUrl
+
+    TaskTableName:
+      Description: Name of the Task Table
+      Value:
+        Ref: TaskTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-TaskTableName
+        
+    ApiEndpoint:
+      Description: API Gateway endpoint URL
+      Value:
+        Fn::Join:
+          - ""
+          - - "https://"
+            - Ref: ApiGatewayRestApi
+            - ".execute-api."
+            - ${self:provider.region}
+            - ".amazonaws.com/"
+            - ${self:provider.stage}
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ApiEndpoint
