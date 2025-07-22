@@ -2,7 +2,29 @@
 
 ## 🔧 Overview
 
-This guide provides comprehensive information about configuring the fault-tolerant task processing system, including environment variables, retry strategies, and stage-specific settings.
+This guide provides comprehensive information about configuring the fault-tolerant task processing system, including environment variables, retry strategies, development tools, and stage-specific settings.
+
+## 🛠️ Development Configuration
+
+### Code Quality Tools
+The project uses modern code quality tools with the following configuration:
+
+- **ESLint** - Flat configuration format with Airbnb TypeScript rules
+- **Prettier** - Consistent code formatting with 2-space indentation
+- **TypeScript** - Strict type checking enabled
+- **VS Code** - Pre-configured workspace settings and extensions
+
+### NPM Scripts
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `code:check` | Check linting and formatting | `npm run code:check` |
+| `code:fix` | Fix all code issues automatically | `npm run code:fix` |
+| `validate` | Full project validation (lint + format + build + test) | `npm run validate` |
+| `validate:fix` | Validate and fix issues | `npm run validate:fix` |
+| `format` | Format code with Prettier | `npm run format` |
+| `format:check` | Check code formatting | `npm run format:check` |
+| `lint:check` | Check ESLint rules | `npm run lint:check` |
+| `lint:fix` | Fix ESLint issues | `npm run lint:fix` |
 
 ## 🌍 Environment Variables
 

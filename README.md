@@ -1,8 +1,9 @@
 # Fault-Tolerant Task Processing System
 
-[![CI Pipeline](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/ci.yml)
-[![Deploy Pipeline](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/deploy.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/deploy.yml)
-[![Security Scan](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/security-and-maintenance.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/security-and-maintenance.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
+[![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-orange.svg)](https://aws.amazon.com/lambda/)
+[![Serverless](https://img.shields.io/badge/Serverless-Framework-red.svg)](https://www.serverless.com/)
+[![Code Style](https://img.shields.io/badge/Code%20Style-Airbnb-brightgreen.svg)](https://github.com/airbnb/javascript)
 
 ## 📚 Documentation Overview
 
@@ -11,6 +12,7 @@ This repository contains a comprehensive fault-tolerant task processing system b
 ## 🗂️ Documentation Structure
 
 ### Core Documentation
+- **[Development Guide](docs/DEVELOPMENT.md)** - Development setup and workflow
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - System architecture and design patterns
 - **[API Reference](docs/API_REFERENCE.md)** - API documentation with examples
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - Deployment instructions and configuration
@@ -25,6 +27,25 @@ This repository contains a comprehensive fault-tolerant task processing system b
 
 ## 🚀 Quick Start
 
+### Development Setup
+```bash
+# Install dependencies
+npm install
+
+# Run code quality checks
+npm run code:check
+
+# Fix code issues automatically
+npm run code:fix
+
+# Validate entire project
+npm run validate
+
+# Start local development
+npm run local
+```
+
+### Documentation Flow
 1. Read the [Architecture Guide](docs/ARCHITECTURE.md) to understand the system
 2. Set up [CI/CD Pipeline](docs/CI_CD.md) for automated deployments
 3. Follow the [Deployment Guide](docs/DEPLOYMENT.md) to set up your environment
@@ -57,7 +78,7 @@ The fault-tolerant task processing system is a serverless, event-driven architec
 - **Runtime**: Node.js 20.x with TypeScript (ESM modules)
 - **Framework**: Serverless Framework v3
 - **AWS Services**: Lambda, API Gateway, SQS, DynamoDB, CloudWatch, X-Ray
-- **Core Libraries**: 
+- **Core Libraries**:
   - **AWS Powertools**: Logger, Metrics, Tracer for observability
   - **Middy.js**: Middleware engine with CORS, error handling, JSON parsing
   - **AWS SDK v3**: Modern AWS service clients
@@ -89,4 +110,3 @@ The fault-tolerant task processing system is a serverless, event-driven architec
 - ✅ Data encryption at rest and in transit
 - ✅ Comprehensive input validation and sanitization
 - ✅ Complete audit trail and operational logging
-
