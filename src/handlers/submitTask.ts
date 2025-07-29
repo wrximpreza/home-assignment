@@ -41,8 +41,9 @@ const customIdempotencyMiddleware = idempotencyMiddleware({
   tableName: process.env.IDEMPOTENCY_TABLE_NAME || 'task-processing-idempotency',
   expirationMinutes: 60,
   keyExtractor: event => {
-    if ((event as any).validatedBody?.taskId) {
-      return (event as any).validatedBody.taskId;
+    const extendedEvent = event as APIGatewayProxyEvent & { validatedBody?: { taskId?: string } };
+    if (extendedEvent.validatedBody?.taskId) {
+      return extendedEvent.validatedBody.taskId;
     }
     try {
       const body = JSON.parse(event.body || '{}');

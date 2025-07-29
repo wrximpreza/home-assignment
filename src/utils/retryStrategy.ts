@@ -1,5 +1,11 @@
 import { retryConfig as defaultRetryConfig } from '@/config';
-import { RetryAttempt, RetryConfig, RetryMetrics, RetryStrategyType } from '@/types';
+import {
+  IBackoffStrategy,
+  RetryAttempt,
+  RetryConfig,
+  RetryMetrics,
+  RetryStrategyType,
+} from '@/types';
 import { BackoffStrategyFactory } from '@/utils/backoffStrategies';
 import { logger } from '@/utils/logger';
 
@@ -154,7 +160,7 @@ export class RetryStrategy {
   /**
    * Register a custom backoff strategy (for extensibility)
    */
-  static registerCustomStrategy(strategyType: RetryStrategyType, strategy: any): void {
+  static registerCustomStrategy(strategyType: RetryStrategyType, strategy: IBackoffStrategy): void {
     BackoffStrategyFactory.registerStrategy(strategyType, strategy);
   }
 

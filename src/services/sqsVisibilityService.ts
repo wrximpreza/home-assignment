@@ -1,5 +1,5 @@
 import { awsConfig, env } from '@/config';
-import { SQSRetryConfig } from '@/types';
+import { RetryStrategyType, SQSRetryConfig } from '@/types';
 import { logger } from '@/utils/logger';
 import { createRetryStrategy } from '@/utils/retryStrategy';
 import {
@@ -64,7 +64,7 @@ export class SQSVisibilityService {
       maxDelayMs: 30000,
       backoffMultiplier: 2,
       jitterEnabled: true,
-      strategy: 'exponential' as any,
+      strategy: 'exponential' as RetryStrategyType,
       useVisibilityTimeout: true,
       visibilityTimeoutMultiplier: 1.2,
     });

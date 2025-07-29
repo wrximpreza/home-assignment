@@ -51,7 +51,10 @@ export const idempotencyMiddleware = (options: IdempotencyOptions) => {
   } = options;
 
   return {
-    before: async (request: any) => {
+    before: async (request: {
+      event: APIGatewayProxyEvent;
+      internal?: Record<string, unknown>;
+    }) => {
       logger.info('Idempotency middleware - before hook called');
 
       const event: APIGatewayProxyEvent = request.event;
@@ -136,7 +139,11 @@ export const idempotencyMiddleware = (options: IdempotencyOptions) => {
       }
     },
 
-    after: async (request: any) => {
+    after: async (request: {
+      event: APIGatewayProxyEvent;
+      response: APIGatewayProxyResult;
+      internal?: Record<string, unknown>;
+    }) => {
       logger.info('Idempotency middleware - after hook called');
 
       const idempotencyKey = request.internal?.idempotencyKey;
@@ -183,7 +190,7 @@ export const idempotencyMiddleware = (options: IdempotencyOptions) => {
           request.response.headers = { 'X-Idempotency-Key': idempotencyKey };
         }
       } catch (error) {
-        if ((error as any).name === 'ConditionalCheckFailedException') {
+        if ((error as Error & { name: string }).name === 'ConditionalCheckFailedException') {
           logger.info('Idempotency record already exists (race condition)', { idempotencyKey });
         } else {
           logger.error('Error storing idempotency record', {
@@ -194,7 +201,10 @@ export const idempotencyMiddleware = (options: IdempotencyOptions) => {
       }
     },
 
-    onError: async (request: any) => {
+    onError: async (request: {
+      event: APIGatewayProxyEvent;
+      internal?: Record<string, unknown>;
+    }) => {
       logger.debug('Not caching error response for idempotency', {
         idempotencyKey: request.internal?.idempotencyKey,
       });

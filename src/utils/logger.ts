@@ -45,7 +45,10 @@ export class PowertoolsLogger {
     this.powertoolsLogger = powertoolsLoggerInstance;
   }
 
-  addContext(_context: LogContext): void {}
+  addContext(_context: LogContext): void {
+    // Context is handled by AWS Lambda Powertools logger automatically
+    // This method is kept for interface compatibility
+  }
 
   error(message: string, context?: LogContext, error?: Error): void {
     const logData: Record<string, unknown> = {
